@@ -1,0 +1,230 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Users ──────────────────────────────────────────────────────────────────
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+model User {
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String
+  name         String
+  role         Role           @default(CUSTOMER)
+  addresses    Address[]
+  orders       Order[]
+  reviews      Review[]
+  wishlist     WishlistItem[]
+  cart         Cart?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  fullName   String
+  line1      String
+  line2      String?
+  city       String
+  state      String
+  postalCode String
+  country    String
+  phone      String?
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ─── Catalog ────────────────────────────────────────────────────────────────
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  imageUrl    String?
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id                  String         @id @default(cuid())
+  name                String
+  slug                String         @unique
+  description         String
+  priceCents          Int
+  /// Original price shown struck-through when the product is on sale
+  compareAtPriceCents Int?
+  sku                 String?        @unique
+  stock               Int            @default(0)
+  images              String[]
+  category            Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId          String?
+  featured            Boolean        @default(false)
+  isActive            Boolean        @default(true)
+  /// Denormalised from reviews for fast listing/sorting
+  ratingAvg           Float          @default(0)
+  ratingCount         Int            @default(0)
+  reviews             Review[]
+  orderItems          OrderItem[]
+  cartItems           CartItem[]
+  wishlistItems       WishlistItem[]
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([categoryId])
+  @@index([isActive, featured])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  rating    Int
+  title     String?
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, userId])
+}
+
+model WishlistItem {
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  createdAt DateTime @default(now())
+
+  @@id([userId, productId])
+}
+
+// ─── Cart ───────────────────────────────────────────────────────────────────
+
+/// A cart belongs to a user, or to an anonymous visitor (identified by a signed cookie).
+model Cart {
+  id         String     @id @default(cuid())
+  user       User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String?    @unique
+  couponCode String?
+  items      CartItem[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  cartId    String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  quantity  Int
+  createdAt DateTime @default(now())
+
+  @@unique([cartId, productId])
+}
+
+// ─── Promotions ─────────────────────────────────────────────────────────────
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+model Coupon {
+  id               String       @id @default(cuid())
+  code             String       @unique
+  description      String?
+  type             DiscountType
+  /// Percent (1–100) for PERCENT, cents for FIXED
+  value            Int
+  minSubtotalCents Int?
+  maxUses          Int?
+  usedCount        Int          @default(0)
+  expiresAt        DateTime?
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+}
+
+// ─── Orders ─────────────────────────────────────────────────────────────────
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  /// Human-friendly sequential order number
+  number          Int           @unique @default(autoincrement())
+  user            User          @relation(fields: [userId], references: [id])
+  userId          String
+  email           String
+  status          OrderStatus   @default(PENDING_PAYMENT)
+  /// Snapshot of the address at checkout time (see ShippingAddress type in @ecom/shared)
+  shippingAddress Json
+  shippingMethod  String
+  subtotalCents   Int
+  discountCents   Int           @default(0)
+  shippingCents   Int
+  taxCents        Int
+  totalCents      Int
+  couponCode      String?
+  // Payment — provider integration to be implemented
+  paymentStatus   PaymentStatus @default(UNPAID)
+  paymentProvider String?
+  paymentRef      String?
+  items           OrderItem[]
+  paidAt          DateTime?
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId    String
+  product    Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productId  String?
+  // Snapshot at purchase time
+  name       String
+  imageUrl   String?
+  priceCents Int
+  quantity   Int
+}

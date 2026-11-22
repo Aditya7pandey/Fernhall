@@ -1,0 +1,21 @@
+{
+  "name": "ecom",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "turbo run db:generate",
+    "db:migrate": "pnpm --filter @ecom/db db:migrate",
+    "db:studio": "pnpm --filter @ecom/db db:studio",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:seed": "pnpm --filter @ecom/db db:seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.13",
+    "typescript": "~7.0.2"
+  }
+}
