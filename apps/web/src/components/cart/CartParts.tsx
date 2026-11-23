@@ -179,7 +179,7 @@ export function TotalsList({
         value={shippingPending ? 'Calculated at checkout' : totals.shippingCents === 0 ? 'Free' : formatPrice(totals.shippingCents)}
         muted={shippingPending}
       />
-      <Row label="Estimated tax" value={formatPrice(totals.taxCents)} />
+      <Row label="Includes GST (18%)" value={formatPrice(totals.taxCents)} />
       <div className="flex items-baseline justify-between border-t border-line pt-4">
         <dt className="text-base font-medium">Total</dt>
         <dd className="font-display text-2xl tabular-nums">

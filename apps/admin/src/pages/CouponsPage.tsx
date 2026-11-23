@@ -272,13 +272,13 @@ function CouponDialog({ coupon, onClose }: { coupon: CouponDTO | null; onClose: 
               value={form.value}
               invalid={!!errors.value}
               onChange={(e) => setForm({ ...form, value: e.target.value })}
-              leading={form.type === 'FIXED' ? '$' : undefined}
+              leading={form.type === 'FIXED' ? '₹' : undefined}
               trailing={form.type === 'PERCENT' ? '%' : undefined}
               className="tabular"
             />
           </Field>
           <Field label="Minimum spend" htmlFor="min" hint="Optional">
-            <Input id="min" inputMode="decimal" leading="$" value={form.minSubtotal} onChange={(e) => setForm({ ...form, minSubtotal: e.target.value })} className="tabular" />
+            <Input id="min" inputMode="decimal" leading="₹" value={form.minSubtotal} onChange={(e) => setForm({ ...form, minSubtotal: e.target.value })} className="tabular" />
           </Field>
           <Field label="Usage limit" htmlFor="max" error={errors.maxUses} hint="Blank = unlimited">
             <Input id="max" type="number" min={1} value={form.maxUses} onChange={(e) => setForm({ ...form, maxUses: e.target.value })} className="tabular" />

@@ -241,7 +241,7 @@ function ProductForm({ product }: { product: AdminProductDetail | null }) {
                 <Input
                   id="price"
                   inputMode="decimal"
-                  leading="$"
+                  leading="₹"
                   value={form.price}
                   invalid={!!errors.priceCents}
                   onChange={(e) => update('price', e.target.value)}
@@ -263,7 +263,7 @@ function ProductForm({ product }: { product: AdminProductDetail | null }) {
                 <Input
                   id="compareAt"
                   inputMode="decimal"
-                  leading="$"
+                  leading="₹"
                   value={form.compareAt}
                   invalid={!!errors.compareAtPriceCents}
                   onChange={(e) => update('compareAt', e.target.value)}

@@ -1,13 +1,16 @@
 import {
+  awaitingNotification,
   formatDate,
+  formatDateTime,
   formatPrice,
+  NOTIFICATION_KIND,
   ORDER_PROGRESS,
   ORDER_STATUS,
   type OrderDTO,
   type OrderStatus,
   type ShippingAddress,
 } from '@ecom/shared'
-import { Check } from 'lucide-react'
+import { Check, Loader2, Mail } from 'lucide-react'
 import { Link } from 'react-router'
 import { cn, imageUrl } from '../../lib/utils'
 import { TotalsList } from '../cart/CartParts'
@@ -163,5 +166,36 @@ export function OrderRow({ order }: { order: OrderDTO }) {
         <p className="font-medium tabular-nums">{formatPrice(order.totalCents)}</p>
       </div>
     </Link>
+  )
+}
+
+/** Emails we've sent about this order — written by the background queue workers. */
+export function OrderNotifications({ order }: { order: OrderDTO }) {
+  const waiting = awaitingNotification(order)
+  if (order.notifications.length === 0 && !waiting) return null
+  return (
+    <ul className="space-y-3">
+      {order.notifications.map((n) => (
+        <li key={n.id} className="flex items-start gap-3 text-sm">
+          <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
+            <Mail className="size-3.5" />
+          </span>
+          <div className="min-w-0">
+            <p className="font-medium text-ink">{NOTIFICATION_KIND[n.kind].label}</p>
+            <p className="text-muted">
+              Emailed to {n.recipient} · {formatDateTime(n.sentAt)}
+            </p>
+          </div>
+        </li>
+      ))}
+      {waiting && (
+        <li className="flex items-center gap-3 text-sm text-muted">
+          <span className="grid size-7 place-items-center">
+            <Loader2 className="size-4 animate-spin" />
+          </span>
+          Sending your email…
+        </li>
+      )}
+    </ul>
   )
 }

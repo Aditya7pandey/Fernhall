@@ -2,12 +2,14 @@ import {
   formatDateTime,
   formatOrderNumber,
   formatPrice,
+  awaitingNotification,
+  NOTIFICATION_KIND,
   ORDER_STATUS,
   type AdminOrderDTO,
   type OrderStatus,
 } from '@ecom/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Ban, Check, CircleDollarSign, Copy, Mail, MapPin, PackageCheck, ShoppingBag, Truck } from 'lucide-react'
+import { ArrowLeft, Ban, Bell, Check, IndianRupee, Copy, Mail, MapPin, PackageCheck, ShoppingBag, Truck } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { toast } from 'sonner'
@@ -32,7 +34,12 @@ const ACTIONS: Partial<Record<OrderStatus, { label: string; icon: ReactNode; des
 export default function OrderDetailPage() {
   const { id = '' } = useParams()
   const qc = useQueryClient()
-  const order = useQuery({ queryKey: ['admin', 'order', id], queryFn: () => api.admin.orders.get(id) })
+  const order = useQuery({
+    queryKey: ['admin', 'order', id],
+    queryFn: () => api.admin.orders.get(id),
+    // The queue worker sends notifications a moment after the order changes — poll until they land
+    refetchInterval: (q) => (q.state.data && awaitingNotification(q.state.data) ? 2000 : false),
+  })
   const [pending, setPending] = useState<OrderStatus | null>(null)
 
   const setStatus = useMutation({
@@ -142,7 +149,7 @@ export default function OrderDetailPage() {
                 />
               )}
               <Row label={`Shipping · ${o.shippingMethod === 'express' ? 'Express' : 'Standard'}`} value={o.shippingCents ? formatPrice(o.shippingCents) : 'Free'} />
-              <Row label="Tax" value={formatPrice(o.taxCents)} />
+              <Row label="Includes GST" value={formatPrice(o.taxCents)} />
               <div className="flex justify-between border-t border-border pt-2.5 text-sm font-semibold">
                 <span>Total</span>
                 <span className="tabular">{formatPrice(o.totalCents)}</span>
@@ -155,25 +162,30 @@ export default function OrderDetailPage() {
             <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
               <div className="flex items-center gap-3">
                 <span className="flex size-9 items-center justify-center rounded-lg bg-surface-3 text-muted">
-                  <CircleDollarSign className="size-[18px]" />
+                  <IndianRupee className="size-[18px]" />
                 </span>
                 <div>
                   <p className="text-[13px] font-medium">
                     {formatPrice(o.totalCents)} · <PaymentStatusBadge status={o.paymentStatus} />
                   </p>
                   <p className="text-xs text-muted">
-                    {o.paymentProvider ? `via ${o.paymentProvider}${o.paymentRef ? ` · ${o.paymentRef}` : ''}` : 'No payment recorded yet'}
+                    {o.paymentProvider ? `via ${o.paymentProvider}` : 'No payment recorded yet'}
                   </p>
+                  {(o.providerOrderId || o.paymentRef) && (
+                    <p className="mt-0.5 font-mono text-[11px] text-subtle">
+                      {o.providerOrderId}
+                      {o.paymentRef && o.paymentRef !== o.providerOrderId ? ` · ${o.paymentRef}` : ''}
+                    </p>
+                  )}
                 </div>
               </div>
-              {/* TODO(payments): refunds / capture actions go here once the payment integration exists. */}
-              <p className="rounded-md border border-dashed border-border px-2.5 py-1 text-xs text-subtle">
-                Refunds — coming with payments integration
-              </p>
+              {/* TODO(refunds): Razorpay refunds API — also allow cancelling PAID orders in ADMIN_TRANSITIONS once built. */}
+              <p className="rounded-md border border-dashed border-border px-2.5 py-1 text-xs text-subtle">Refunds — not built yet</p>
             </div>
           </Card>
 
           <Timeline o={o} />
+          <Notifications o={o} />
         </div>
 
         <div className="space-y-6">
@@ -275,7 +287,7 @@ function InfoLine({ icon, children }: { icon: ReactNode; children: ReactNode }) 
 function Timeline({ o }: { o: AdminOrderDTO }) {
   const steps: { label: string; at: string | null; icon: ReactNode; tone?: 'danger' }[] = [
     { label: 'Order placed', at: o.createdAt, icon: <ShoppingBag /> },
-    { label: 'Payment received', at: o.paidAt, icon: <CircleDollarSign /> },
+    { label: 'Payment received', at: o.paidAt, icon: <IndianRupee /> },
     { label: 'Shipped', at: o.shippedAt, icon: <Truck /> },
     { label: 'Delivered', at: o.deliveredAt, icon: <Check /> },
   ]
@@ -315,6 +327,37 @@ function Timeline({ o }: { o: AdminOrderDTO }) {
           )
         })}
       </ol>
+    </Card>
+  )
+}
+
+/** Emails the background workers sent for this order (OrderNotification rows). */
+function Notifications({ o }: { o: AdminOrderDTO }) {
+  return (
+    <Card>
+      <CardHeader title="Notifications" />
+      {o.notifications.length === 0 ? (
+        <p className="px-5 py-4 text-[13px] text-muted">
+          {awaitingNotification(o) ? 'Queued — the worker is sending it…' : 'No notifications sent for this order.'}
+        </p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {o.notifications.map((n) => (
+            <li key={n.id} className="flex items-start gap-3 px-5 py-3">
+              <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-accent/30 bg-accent-soft text-accent-soft-fg [&_svg]:size-3.5">
+                <Bell />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium">{NOTIFICATION_KIND[n.kind].label}</p>
+                <p className="truncate text-xs text-muted">
+                  {n.channel} to {n.recipient}
+                </p>
+              </div>
+              <p className="shrink-0 text-xs text-muted">{formatDateTime(n.sentAt)}</p>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   )
 }

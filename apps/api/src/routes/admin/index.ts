@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { extname } from 'node:path'
 import { Router } from 'express'
 import multer from 'multer'
+import * as uploads from '../../controllers/admin/uploads.controller.js'
 import { env } from '../../env.js'
-import { badRequest } from '../../lib/http.js'
 import { requireAdmin } from '../../middleware/auth.js'
 import { adminCatalogRouter } from './catalog.js'
 import { adminSalesRouter } from './sales.js'
@@ -26,9 +26,4 @@ const upload = multer({
   fileFilter: (_req, file, cb) => cb(null, IMAGE_TYPES.has(file.mimetype)),
 })
 
-/** multipart/form-data with one or more `files` fields → { urls: ['/uploads/…'] } */
-adminRouter.post('/uploads', upload.array('files', 10), (req, res) => {
-  const files = (req.files as Express.Multer.File[] | undefined) ?? []
-  if (files.length === 0) throw badRequest('Upload JPEG, PNG, WebP, GIF or AVIF images up to 5 MB')
-  res.status(201).json({ urls: files.map((f) => `/uploads/${f.filename}`) })
-})
+adminRouter.post('/uploads', upload.array('files', 10), uploads.uploadImages)

@@ -8,6 +8,7 @@ import { CouponForm, TotalsList } from '../components/cart/CartParts'
 import { AddressForm } from '../components/order/AddressForm'
 import { Button } from '../components/ui/Button'
 import { Card, Skeleton } from '../components/ui/misc'
+import { useIdempotencyKey } from '../hooks/useIdempotencyKey'
 import { useSession } from '../hooks/useSession'
 import { api } from '../lib/api'
 import { qk } from '../lib/query'
@@ -47,8 +48,10 @@ function Checkout() {
     },
   })
 
+  // One key per (address, shipping method) choice: double-clicks and retries reuse it → one order
+  const orderKey = useIdempotencyKey([addressId, method])
   const placeOrder = useMutation({
-    mutationFn: () => api.orders.place({ addressId: addressId!, shippingMethod: method }),
+    mutationFn: () => api.orders.place({ addressId: addressId!, shippingMethod: method }, orderKey),
     onSuccess: (order) => {
       qc.invalidateQueries({ queryKey: qk.cart })
       qc.invalidateQueries({ queryKey: ['orders'] })
@@ -193,7 +196,7 @@ function Checkout() {
   )
 }
 
-export function Steps({ current }: { current: 1 | 2 }) {
+export function Steps({ current }: { current: 1 | 2 | 3 }) {
   const steps = ['Details', 'Payment', 'Done']
   return (
     <ol className="flex items-center gap-2 text-sm" aria-label="Checkout progress">
@@ -203,10 +206,10 @@ export function Steps({ current }: { current: 1 | 2 }) {
           <span
             className={cn(
               'grid size-6 place-items-center rounded-full text-xs font-medium',
-              i + 1 < current ? 'bg-ink text-canvas' : i + 1 === current ? 'bg-ink text-canvas ring-4 ring-ink/10' : 'bg-sand text-muted',
+              i + 1 < current || current === steps.length ? 'bg-accent text-white' : i + 1 === current ? 'bg-accent text-white ring-4 ring-accent/15' : 'bg-sand text-muted',
             )}
           >
-            {i + 1 < current ? <Check className="size-3.5" /> : i + 1}
+            {i + 1 < current || current === steps.length ? <Check className="size-3.5" /> : i + 1}
           </span>
           <span className={cn(i + 1 > current && 'text-muted')} aria-current={i + 1 === current ? 'step' : undefined}>
             {s}

@@ -1,10 +1,16 @@
 import type { Coupon } from '@ecom/db'
 
-export const TAX_RATE = 0.08
+/**
+ * Money is stored in the currency's minor unit (paise for INR) in the *Cents fields.
+ * Prices are GST-inclusive, as is standard in India: tax is the GST portion already inside the price.
+ */
+export const CURRENCY = 'INR'
+export const GST_RATE = 0.18
 
 export const SHIPPING_METHODS = {
-  standard: { id: 'standard', label: 'Standard', description: '3–5 business days', priceCents: 599, freeOverCents: 7500 },
-  express: { id: 'express', label: 'Express', description: '1–2 business days', priceCents: 1499, freeOverCents: null },
+  // Keep freeOverCents in sync with FREE_SHIPPING_THRESHOLD in packages/shared/src/constants.ts
+  standard: { id: 'standard', label: 'Standard', description: '3–5 business days', priceCents: 9900, freeOverCents: 299900 },
+  express: { id: 'express', label: 'Express', description: '1–2 business days', priceCents: 24900, freeOverCents: null },
 } as const
 
 export type ShippingMethodId = keyof typeof SHIPPING_METHODS
@@ -16,7 +22,7 @@ export function couponProblem(coupon: Coupon | null, subtotalCents: number, now 
   if (coupon.expiresAt && coupon.expiresAt < now) return 'This code has expired'
   if (coupon.maxUses != null && coupon.usedCount >= coupon.maxUses) return 'This code has reached its usage limit'
   if (coupon.minSubtotalCents != null && subtotalCents < coupon.minSubtotalCents) {
-    return `Spend $${(coupon.minSubtotalCents / 100).toFixed(2)} or more to use this code`
+    return `Spend ₹${(coupon.minSubtotalCents / 100).toLocaleString('en-IN')} or more to use this code`
   }
   return null
 }
@@ -35,12 +41,14 @@ export function shippingFor(method: ShippingMethodId, subtotalCents: number) {
 export function computeTotals(subtotalCents: number, coupon: Coupon | null, method: ShippingMethodId) {
   const discountCents = coupon && !couponProblem(coupon, subtotalCents) ? discountFor(coupon, subtotalCents) : 0
   const shippingCents = shippingFor(method, subtotalCents)
-  const taxCents = Math.round((subtotalCents - discountCents) * TAX_RATE)
+  // GST-inclusive: the tax is already part of the (discounted) price, so it's reported, not added
+  const taxableCents = subtotalCents - discountCents
+  const taxCents = Math.round((taxableCents * GST_RATE) / (1 + GST_RATE))
   return {
     subtotalCents,
     discountCents,
     shippingCents,
     taxCents,
-    totalCents: subtotalCents - discountCents + shippingCents + taxCents,
+    totalCents: taxableCents + shippingCents,
   }
 }

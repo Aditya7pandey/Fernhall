@@ -1,6 +1,6 @@
 import { formatDate, formatOrderNumber, formatPrice, formatPriceCompact, ORDER_STATUS, type AdminStats, type OrderStatus } from '@ecom/shared'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, DollarSign, PackageCheck, Receipt, ShoppingBag, Users } from 'lucide-react'
+import { AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, IndianRupee, PackageCheck, Receipt, ShoppingBag, Users } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -103,7 +103,7 @@ function Kpi({
 function Kpis({ s }: { s: AdminStats }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-      <Kpi label="Revenue" value={formatPrice(s.revenueCents)} change={s.revenueChangePct} sub="vs previous period" icon={<DollarSign />} />
+      <Kpi label="Revenue" value={formatPrice(s.revenueCents)} change={s.revenueChangePct} sub="vs previous period" icon={<IndianRupee />} />
       <Kpi label="Orders" value={s.orders.toLocaleString()} change={s.ordersChangePct} sub="vs previous period" icon={<ShoppingBag />} />
       <Kpi label="Average order" value={formatPrice(s.averageOrderCents)} sub="paid orders" icon={<Receipt />} />
       <Kpi

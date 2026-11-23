@@ -22,12 +22,14 @@ const SORTS: { value: ProductSort; label: string }[] = [
   { value: 'name', label: 'Name A–Z' },
 ]
 
-/** Price presets in dollars (URL keeps dollars; API takes cents) */
+const rupees = (n: number | undefined) => `₹${(n ?? 0).toLocaleString('en-IN')}`
+
+/** Price presets in rupees (URL keeps rupees; API takes paise) */
 const PRICE_RANGES = [
-  { label: 'Under $50', min: undefined, max: 50 },
-  { label: '$50 – $150', min: 50, max: 150 },
-  { label: '$150 – $500', min: 150, max: 500 },
-  { label: '$500 & above', min: 500, max: undefined },
+  { label: 'Under ₹1,000', min: undefined, max: 1000 },
+  { label: '₹1,000 – ₹5,000', min: 1000, max: 5000 },
+  { label: '₹5,000 – ₹20,000', min: 5000, max: 20000 },
+  { label: '₹20,000 & above', min: 20000, max: undefined },
 ] as const
 
 const PAGE_SIZE = 12
@@ -86,7 +88,7 @@ export function ShopPage() {
     ...(q ? [{ label: `“${q}”`, clear: () => update({ q: undefined }) }] : []),
     ...(minPrice != null || maxPrice != null
       ? [{
-          label: maxPrice == null ? `$${minPrice}+` : minPrice == null ? `Under $${maxPrice}` : `$${minPrice} – $${maxPrice}`,
+          label: maxPrice == null ? `${rupees(minPrice)}+` : minPrice == null ? `Under ${rupees(maxPrice)}` : `${rupees(minPrice)} – ${rupees(maxPrice)}`,
           clear: () => update({ minPrice: undefined, maxPrice: undefined }),
         }]
       : []),

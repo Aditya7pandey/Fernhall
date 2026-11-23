@@ -165,7 +165,7 @@ function ProductView({ product }: { product: ProductDetail }) {
 
               <ul className="mt-8 divide-y divide-line rounded-2xl border border-line bg-surface text-sm">
                 {[
-                  { icon: Truck, title: 'Free standard shipping', text: 'On orders over $75 · Express available at checkout' },
+                  { icon: Truck, title: 'Free standard shipping', text: 'On orders over ₹2,999 · Express available at checkout' },
                   { icon: RotateCcw, title: 'Free 30-day returns', text: 'Changed your mind? Send it back, on us.' },
                   { icon: ShieldCheck, title: 'Secure checkout', text: 'Your details are always protected.' },
                 ].map(({ icon: Icon, title, text }) => (

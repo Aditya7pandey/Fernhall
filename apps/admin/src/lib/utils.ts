@@ -63,5 +63,5 @@ export function relativeTime(iso: string) {
   return rtf.format(-Math.round(months / 12), 'year')
 }
 
-/** Dollars string for form inputs from cents */
+/** Rupee string for form inputs from paise */
 export const centsToInput = (cents: number | null | undefined) => (cents == null ? '' : (cents / 100).toFixed(2))

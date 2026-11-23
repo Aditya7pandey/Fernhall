@@ -16,18 +16,19 @@ enum Role {
 }
 
 model User {
-  id           String         @id @default(cuid())
-  email        String         @unique
-  passwordHash String
-  name         String
-  role         Role           @default(CUSTOMER)
-  addresses    Address[]
-  orders       Order[]
-  reviews      Review[]
-  wishlist     WishlistItem[]
-  cart         Cart?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id              String           @id @default(cuid())
+  email           String           @unique
+  passwordHash    String
+  name            String
+  role            Role             @default(CUSTOMER)
+  addresses       Address[]
+  orders          Order[]
+  reviews         Review[]
+  wishlist        WishlistItem[]
+  cart            Cart?
+  idempotencyKeys IdempotencyKey[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 }
 
 model Address {
@@ -200,11 +201,16 @@ model Order {
   taxCents        Int
   totalCents      Int
   couponCode      String?
-  // Payment — provider integration to be implemented
+  currency        String        @default("INR")
+  // Payment (Razorpay)
   paymentStatus   PaymentStatus @default(UNPAID)
   paymentProvider String?
+  /// Razorpay order id (order_…). Unique, so one of our orders maps to exactly one Razorpay order.
+  providerOrderId String?       @unique
+  /// Razorpay payment id (pay_…) once paid
   paymentRef      String?
   items           OrderItem[]
+  notifications   OrderNotification[]
   paidAt          DateTime?
   shippedAt       DateTime?
   deliveredAt     DateTime?
@@ -227,4 +233,69 @@ model OrderItem {
   imageUrl   String?
   priceCents Int
   quantity   Int
+}
+
+// ─── Idempotency ────────────────────────────────────────────────────────────
+
+enum IdempotencyStatus {
+  /// The first request with this key is still running
+  IN_PROGRESS
+  /// Finished; responseStatus/responseBody hold the result to replay
+  COMPLETED
+}
+
+/// Remembers requests sent with an `Idempotency-Key` header so a retry replays the
+/// original response instead of running the operation again (see middleware/idempotency.ts).
+model IdempotencyKey {
+  id             String            @id @default(cuid())
+  /// Keys are scoped per user — two users may happen to send the same key
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  key            String
+  method         String
+  path           String
+  /// SHA-256 of the request body: detects the same key being reused for a different request
+  requestHash    String
+  status         IdempotencyStatus @default(IN_PROGRESS)
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([userId, key])
+  @@index([createdAt])
+}
+
+/// Razorpay webhook events we've already handled. The unique eventId turns a
+/// redelivered webhook into a no-op.
+model PaymentEvent {
+  id        String   @id @default(cuid())
+  provider  String
+  eventId   String   @unique
+  type      String
+  orderId   String?
+  payload   Json
+  createdAt DateTime @default(now())
+}
+
+enum NotificationKind {
+  ORDER_RECEIVED
+  PAYMENT_CONFIRMED
+  ORDER_EXPIRED
+}
+
+/// One row per notification actually sent. The unique (orderId, kind) makes background jobs
+/// idempotent: a retried or duplicated job sees the row and doesn't email the customer twice.
+model OrderNotification {
+  id        String           @id @default(cuid())
+  order     Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId   String
+  kind      NotificationKind
+  channel   String           @default("email")
+  recipient String
+  sentAt    DateTime         @default(now())
+  /// When the customer saw it in the header bell (null = unread)
+  readAt    DateTime?
+
+  @@unique([orderId, kind])
 }

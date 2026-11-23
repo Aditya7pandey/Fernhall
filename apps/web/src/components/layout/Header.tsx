@@ -6,6 +6,7 @@ import { cartDrawer, useCart } from '../../hooks/useCart'
 import { useSession } from '../../hooks/useSession'
 import { useCategories } from '../../hooks/useCategories'
 import { cn, STORE_NAME } from '../../lib/utils'
+import { NotificationBell } from './NotificationBell'
 
 export function Logo({ className }: { className?: string }) {
   return (
@@ -49,7 +50,7 @@ export function Header() {
   return (
     <>
       <div className="bg-brand-gradient px-4 py-2 text-center text-xs font-medium tracking-wide text-white">
-        Free standard shipping on orders over $75 · Free 30-day returns
+        Free shipping on orders over ₹2,999 · Free 30-day returns
       </div>
       <header
         className={cn(
@@ -83,6 +84,7 @@ export function Header() {
             <button type="button" className={iconBtn} onClick={() => setSearchOpen(true)} aria-label="Search">
               <Search className="size-[19px]" />
             </button>
+            {user && <NotificationBell className={iconBtn} />}
             <Link to={user ? '/account' : '/signin'} className={cn(iconBtn, 'hidden sm:grid')} aria-label={user ? 'Your account' : 'Sign in'}>
               <User className="size-[19px]" />
             </Link>

@@ -12,7 +12,8 @@
     "db:studio": "pnpm --filter @ecom/db db:studio",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "db:seed": "pnpm --filter @ecom/db db:seed"
+    "db:seed": "pnpm --filter @ecom/db db:seed",
+    "test": "turbo run test"
   },
   "devDependencies": {
     "turbo": "^2.11.13",

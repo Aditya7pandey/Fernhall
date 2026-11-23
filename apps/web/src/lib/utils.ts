@@ -39,4 +39,4 @@ export function fieldErrors(err: unknown): Record<string, string> {
 }
 
 export const STORE_NAME = 'Fernhall'
-export const FREE_SHIPPING_CENTS = 7500
+export { FREE_SHIPPING_THRESHOLD as FREE_SHIPPING_CENTS } from '@ecom/shared'

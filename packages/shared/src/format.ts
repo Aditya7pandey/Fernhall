@@ -1,8 +1,11 @@
-export const formatPrice = (cents: number, currency = 'USD', locale?: string) =>
+import { STORE_CURRENCY, STORE_LOCALE } from './constants.ts'
+
+/** Amounts are in the currency's minor unit (paise for INR). */
+export const formatPrice = (cents: number, currency = STORE_CURRENCY, locale = STORE_LOCALE) =>
   new Intl.NumberFormat(locale, { style: 'currency', currency }).format(cents / 100)
 
-/** Whole-dollar price for compact displays (e.g. $1,499) */
-export const formatPriceCompact = (cents: number, currency = 'USD', locale?: string) =>
+/** Whole-unit price for compact displays (e.g. ₹1,499) */
+export const formatPriceCompact = (cents: number, currency = STORE_CURRENCY, locale = STORE_LOCALE) =>
   new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0 }).format(cents / 100)
 
 export const formatDate = (iso: string, opts: Intl.DateTimeFormatOptions = { dateStyle: 'medium' }) =>

@@ -19,6 +19,7 @@ function useResetUserData() {
     qc.removeQueries({ queryKey: ['orders'] })
     qc.removeQueries({ queryKey: ['order'] })
     qc.removeQueries({ queryKey: qk.addresses })
+    qc.removeQueries({ queryKey: qk.notifications })
   }
 }
 

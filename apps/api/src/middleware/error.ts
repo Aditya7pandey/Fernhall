@@ -35,6 +35,13 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     res.status(400).json({ error: err.message, code: 'UPLOAD_ERROR' })
     return
   }
+  // Razorpay SDK rejects with { statusCode, error: { code, description } } (not an Error instance)
+  const rzp = err as { statusCode?: number; error?: { code?: string; description?: string } }
+  if (typeof rzp?.statusCode === 'number' && rzp.error?.description) {
+    console.error('[razorpay]', rzp.statusCode, rzp.error)
+    res.status(502).json({ error: `Payment provider error: ${rzp.error.description}`, code: 'PAYMENT_PROVIDER_ERROR' })
+    return
+  }
   console.error(err)
   res.status(500).json({ error: 'Something went wrong', code: 'INTERNAL' })
 }

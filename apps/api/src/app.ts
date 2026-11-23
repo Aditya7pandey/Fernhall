@@ -10,8 +10,9 @@ import { adminRouter } from './routes/admin/index.js'
 import { authRouter } from './routes/auth.js'
 import { cartRouter } from './routes/cart.js'
 import { catalogRouter } from './routes/catalog.js'
+import { notificationsRouter } from './routes/notifications.js'
 import { checkoutRouter, ordersRouter } from './routes/orders.js'
-import { paymentsRouter } from './routes/payments.js'
+import { paymentsRouter, paymentsWebhookRouter } from './routes/payments.js'
 
 export function createApp() {
   const app = express()
@@ -19,7 +20,8 @@ export function createApp() {
   app.set('trust proxy', 1)
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
   app.use(cors({ origin: env.corsOrigins, credentials: true }))
-  // TODO(payments): mount the provider webhook here, before express.json(), so it receives the raw body.
+  // Razorpay webhook: mounted BEFORE express.json() so it receives the raw body for signature checks
+  app.use('/payments/webhook', paymentsWebhookRouter)
   app.use(express.json({ limit: '1mb' }))
   app.use(cookieParser(env.cookieSecret))
   app.use('/uploads', express.static(env.uploadDir, { maxAge: '7d', fallthrough: false }))
@@ -35,6 +37,7 @@ export function createApp() {
   app.use('/checkout', checkoutRouter)
   app.use('/orders', ordersRouter)
   app.use('/payments', paymentsRouter)
+  app.use('/notifications', notificationsRouter)
   app.use('/wishlist', wishlistRouter)
   app.use('/addresses', addressesRouter)
   app.use('/admin', adminRouter)

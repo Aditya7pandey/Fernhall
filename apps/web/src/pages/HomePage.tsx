@@ -63,7 +63,7 @@ export function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.9, delay: 0.15, ease }}
             >
-              Fashion, tech, home and beauty you'll actually want — with free shipping over $75 and free 30-day returns.
+              Fashion, tech, home and beauty you'll actually want — with free shipping over ₹2,999 and free 30-day returns.
             </motion.p>
             <motion.div
               className="mt-9 flex flex-wrap gap-3"
@@ -131,7 +131,7 @@ export function HomePage() {
       <section className="border-y border-line bg-surface/60">
         <div className="container-page grid grid-cols-2 gap-6 py-8 lg:grid-cols-4">
           {[
-            { icon: Truck, title: 'Free shipping', text: 'On orders over $75' },
+            { icon: Truck, title: 'Free shipping', text: 'On orders over ₹2,999' },
             { icon: RotateCcw, title: 'Free returns', text: '30 days, no questions' },
             { icon: ShieldCheck, title: 'Secure checkout', text: 'Your data, protected' },
             { icon: Leaf, title: 'Made to last', text: 'Responsibly sourced' },

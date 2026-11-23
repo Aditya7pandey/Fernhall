@@ -1,42 +1,112 @@
-import { ApiError, formatOrderNumber, formatPrice } from '@ecom/shared'
+import { ApiError, awaitingNotification, formatOrderNumber, formatPrice, type OrderDTO } from '@ecom/shared'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Clock, CreditCard, PackageCheck } from 'lucide-react'
+import { CheckCircle2, Clock, CreditCard, Loader2, Lock, PackageCheck, ShieldCheck } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { toast } from 'sonner'
-import { AddressBlock, OrderItems, OrderStatusBadge, OrderTotals } from '../components/order/OrderParts'
+import { AddressBlock, OrderItems, OrderNotifications, OrderStatusBadge, OrderTotals } from '../components/order/OrderParts'
 import { Button, ButtonLink } from '../components/ui/Button'
 import { Card, Skeleton } from '../components/ui/misc'
+import { useIdempotencyKey } from '../hooks/useIdempotencyKey'
 import { api } from '../lib/api'
 import { qk } from '../lib/query'
+import { openRazorpay, type RazorpaySuccess } from '../lib/razorpay'
 import { errorMessage } from '../lib/utils'
 import { Steps } from './CheckoutPage'
 import { NotFoundPage } from './NotFoundPage'
 
+type Phase = 'idle' | 'opening' | 'in-checkout' | 'verifying'
+
 /**
- * Payment step for a placed order.
+ * Payment step for a placed order (status PENDING_PAYMENT, stock reserved).
  *
- * The order already exists as PENDING_PAYMENT with its stock reserved. Online payment
- * is not built yet — the API answers 501 / PAYMENT_NOT_IMPLEMENTED — so this page shows
- * an intentional "coming soon" state instead of a payment form.
+ *  Pay → api.payments.start (Idempotency-Key) → Razorpay Checkout → api.payments.verify
+ *
+ * If the customer closes the tab after paying, the Razorpay webhook still marks the order
+ * paid server-side, so nothing here is the only path to "paid".
  */
 export function PaymentPage() {
   const { orderId = '' } = useParams()
   const qc = useQueryClient()
-  const order = useQuery({ queryKey: qk.order(orderId), queryFn: () => api.orders.get(orderId) })
+  const order = useQuery({
+    queryKey: qk.order(orderId),
+    queryFn: () => api.orders.get(orderId),
+    // After paying, the confirmation email is sent by a queue worker — poll until it appears
+    refetchInterval: (q) => (q.state.data && awaitingNotification(q.state.data) ? 2000 : false),
+  })
+  const [phase, setPhase] = useState<Phase>('idle')
+  const [failure, setFailure] = useState<string | null>(null)
+
+  // "Pay for this order" is one intent → one key, reused if the customer clicks Pay again.
+  // The server replays the same Razorpay order instead of creating a new one each time.
+  const payKey = useIdempotencyKey([orderId])
 
   const awaitingPayment = order.data?.status === 'PENDING_PAYMENT'
 
-  // TODO(payments): this is where the integration plugs in. `api.payments.start(orderId)`
-  // should return the provider session (e.g. a client secret or redirect URL); render the
-  // provider's payment UI with it, then confirm and refetch the order on success.
-  const payment = useQuery({
-    queryKey: ['payment', orderId],
-    queryFn: () => api.payments.start(orderId),
-    enabled: awaitingPayment,
-    retry: false,
-    staleTime: Infinity,
+  const onPaid = (updated: Pick<OrderDTO, 'status' | 'paymentStatus'>) => {
+    qc.setQueryData<OrderDTO>(qk.order(orderId), (prev) => (prev ? { ...prev, ...updated } : prev))
+    qc.invalidateQueries({ queryKey: qk.order(orderId) })
+    qc.invalidateQueries({ queryKey: ['orders'] })
+    qc.invalidateQueries({ queryKey: qk.notifications })
+    toast.success('Payment successful — thank you!')
+  }
+
+  const verify = useMutation({
+    mutationFn: (r: RazorpaySuccess) => api.payments.verify({ orderId, ...r }),
+    onSuccess: onPaid,
+    onError: (err) => {
+      // The payment may still have gone through — the webhook will confirm it. Refetch to see.
+      toast.error(`We couldn't confirm your payment yet: ${errorMessage(err)}`)
+      qc.invalidateQueries({ queryKey: qk.order(orderId) })
+    },
+    onSettled: () => setPhase('idle'),
   })
-  const notImplemented = payment.error instanceof ApiError && payment.error.code === 'PAYMENT_NOT_IMPLEMENTED'
+
+  const pay = useMutation({
+    mutationFn: () => api.payments.start(orderId, payKey),
+    onMutate: () => {
+      setFailure(null)
+      setPhase('opening')
+    },
+    onSuccess: async (session) => {
+      try {
+        await openRazorpay(
+          {
+            key: session.keyId,
+            amount: session.amount,
+            currency: session.currency,
+            order_id: session.razorpayOrderId,
+            name: 'Fernhall',
+            description: `Order ${formatOrderNumber(session.orderNumber)}`,
+            prefill: session.prefill,
+            notes: { orderId: session.orderId },
+            theme: { color: '#6c2bff' },
+            handler: (response) => {
+              setPhase('verifying')
+              verify.mutate(response)
+            },
+            modal: {
+              ondismiss: () => {
+                setPhase((p) => (p === 'verifying' ? p : 'idle'))
+              },
+            },
+          },
+          (r) => setFailure(r.error.description || 'Payment failed. Please try again.'),
+        )
+        setPhase('in-checkout')
+      } catch (err) {
+        setPhase('idle')
+        toast.error(errorMessage(err))
+      }
+    },
+    onError: (err) => {
+      setPhase('idle')
+      if (err instanceof ApiError && err.status === 409) qc.invalidateQueries({ queryKey: qk.order(orderId) })
+      else if (!(err instanceof ApiError && err.code === 'PAYMENTS_NOT_CONFIGURED')) toast.error(errorMessage(err)) // shown inline instead
+    },
+  })
+
+  const notConfigured = pay.error instanceof ApiError && pay.error.code === 'PAYMENTS_NOT_CONFIGURED'
 
   const cancel = useMutation({
     mutationFn: () => api.orders.cancel(orderId),
@@ -59,15 +129,17 @@ export function PaymentPage() {
   }
   if (!order.data) return <NotFoundPage title="Order not found" />
   const o = order.data
+  const paid = o.paymentStatus === 'PAID'
+  const busy = phase !== 'idle' || pay.isPending
 
   return (
     <div className="container-page py-10 lg:py-14">
       <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow mb-2">Order {formatOrderNumber(o.number)}</p>
-          <h1 className="text-4xl font-bold sm:text-5xl">{awaitingPayment ? 'Complete your payment' : 'Your order'}</h1>
+          <h1 className="text-4xl font-bold sm:text-5xl">{awaitingPayment ? 'Complete your payment' : paid ? 'Order confirmed' : 'Your order'}</h1>
         </div>
-        <Steps current={2} />
+        <Steps current={paid ? 3 : 2} />
       </div>
 
       <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-12 lg:gap-14">
@@ -81,36 +153,43 @@ export function PaymentPage() {
                 </p>
               </div>
               <div className="px-6 py-10 text-center sm:px-12">
-                <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-sand">
-                  <CreditCard className="size-7" strokeWidth={1.5} />
+                <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-accent-soft text-accent">
+                  {phase === 'verifying' ? <Loader2 className="size-7 animate-spin" /> : <CreditCard className="size-7" strokeWidth={1.75} />}
                 </div>
-                {payment.isLoading ? (
-                  <Skeleton className="mx-auto mt-6 h-8 w-64" />
-                ) : notImplemented ? (
+
+                {phase === 'verifying' ? (
                   <>
-                    <h2 className="mt-6 text-3xl">Online payment is coming soon</h2>
+                    <h2 className="mt-6 text-3xl">Confirming your payment…</h2>
+                    <p className="mx-auto mt-3 max-w-md text-muted">This only takes a moment. Please don't close this page.</p>
+                  </>
+                ) : notConfigured ? (
+                  <>
+                    <h2 className="mt-6 text-3xl">Payments aren't set up yet</h2>
                     <p className="mx-auto mt-3 max-w-md text-muted">
-                      We're putting the finishing touches on secure checkout. Your order is saved as
-                      <span className="font-medium text-ink"> awaiting payment</span>, and you'll be able to pay for it from your account as soon as payments go live.
+                      Add your Razorpay test keys to <code className="rounded bg-sand px-1.5 py-0.5 text-sm">apps/api/.env</code> and try again.
                     </p>
                   </>
-                ) : payment.isError ? (
-                  <>
-                    <h2 className="mt-6 text-3xl">We couldn't start payment</h2>
-                    <p className="mx-auto mt-3 max-w-md text-muted">{errorMessage(payment.error)}</p>
-                    <Button variant="outline" className="mt-6" onClick={() => payment.refetch()}>
-                      Try again
-                    </Button>
-                  </>
                 ) : (
-                  // TODO(payments): render the provider's payment element here using `payment.data`.
-                  <p className="mt-6 text-muted">Preparing secure payment…</p>
+                  <>
+                    <h2 className="mt-6 text-3xl">Pay securely with Razorpay</h2>
+                    <p className="mx-auto mt-3 max-w-md text-muted">UPI, cards, netbanking and wallets. You'll confirm the payment in a secure Razorpay window.</p>
+                  </>
                 )}
-                <div className="mt-8 flex flex-wrap justify-center gap-3">
-                  <ButtonLink to={`/account/orders/${o.id}`}>View order</ButtonLink>
-                  <ButtonLink to="/shop" variant="outline">
-                    Continue shopping
-                  </ButtonLink>
+
+                {failure && (
+                  <p role="alert" className="mx-auto mt-5 max-w-md rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger">
+                    {failure} — no money was taken for this attempt. You can try again.
+                  </p>
+                )}
+
+                <div className="mt-8 flex flex-col items-center gap-3">
+                  <Button size="lg" className="min-w-64" onClick={() => pay.mutate()} disabled={busy} loading={phase === 'opening'}>
+                    <Lock className="size-4" />
+                    {failure ? 'Try again' : `Pay ${formatPrice(o.totalCents)}`}
+                  </Button>
+                  <p className="flex items-center gap-1.5 text-xs text-muted">
+                    <ShieldCheck className="size-3.5" /> Payments are processed by Razorpay. We never see your card details.
+                  </p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-6 py-4 text-sm">
@@ -120,11 +199,30 @@ export function PaymentPage() {
                 <button
                   type="button"
                   onClick={() => cancel.mutate()}
-                  disabled={cancel.isPending}
+                  disabled={cancel.isPending || busy}
                   className="font-medium text-danger underline-offset-4 hover:underline disabled:opacity-50"
                 >
                   {cancel.isPending ? 'Cancelling…' : 'Cancel order'}
                 </button>
+              </div>
+            </Card>
+          ) : paid ? (
+            <Card className="p-8 text-center sm:p-10">
+              <div className="mx-auto grid size-16 place-items-center rounded-full bg-success-soft text-success">
+                <CheckCircle2 className="size-8" />
+              </div>
+              <h2 className="mt-5 text-3xl">Payment received</h2>
+              <p className="mx-auto mt-2 max-w-md text-muted">
+                Thanks{o.shippingAddress.fullName ? `, ${o.shippingAddress.fullName.split(' ')[0]}` : ''}! We've got your order and we're getting it ready.
+              </p>
+              <div className="mx-auto mt-6 max-w-sm text-left">
+                <OrderNotifications order={o} />
+              </div>
+              <div className="mt-7 flex flex-wrap justify-center gap-3">
+                <ButtonLink to={`/account/orders/${o.id}`}>Track order</ButtonLink>
+                <ButtonLink to="/shop" variant="outline">
+                  Keep shopping
+                </ButtonLink>
               </div>
             </Card>
           ) : (

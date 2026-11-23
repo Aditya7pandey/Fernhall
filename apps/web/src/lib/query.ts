@@ -25,4 +25,5 @@ export const qk = {
   order: (id: string) => ['order', id] as const,
   addresses: ['addresses'] as const,
   shippingMethods: ['shipping-methods'] as const,
+  notifications: ['notifications'] as const,
 }

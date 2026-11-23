@@ -20,6 +20,7 @@ import type {
   OrderDTO,
   OrderStatus,
   Paginated,
+  PaymentSession,
   PlaceOrderInput,
   ProductDetail,
   ProductDTO,
@@ -32,7 +33,10 @@ import type {
   ShippingMethod,
   ShippingMethodId,
   UpdateProfileInput,
+  VerifyPaymentInput,
+  VerifyPaymentResult,
   WishlistProduct,
+  NotificationsDTO,
 } from './types.ts'
 
 export class ApiError extends Error {
@@ -67,12 +71,19 @@ function toQueryString(query?: Query) {
  * Pass `/api` in dev (Vite proxies it to the API) or the deployed API URL in production.
  */
 export function createApiClient(baseUrl: string) {
-  async function request<T>(method: string, path: string, opts: { body?: unknown; query?: Query } = {}): Promise<T> {
+  async function request<T>(
+    method: string,
+    path: string,
+    opts: { body?: unknown; query?: Query; headers?: Record<string, string> } = {},
+  ): Promise<T> {
     const isForm = typeof FormData !== 'undefined' && opts.body instanceof FormData
     const res = await fetch(`${baseUrl}${path}${toQueryString(opts.query)}`, {
       method,
       credentials: 'include',
-      headers: opts.body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : undefined,
+      headers: {
+        ...(opts.body !== undefined && !isForm && { 'Content-Type': 'application/json' }),
+        ...opts.headers,
+      },
       body: opts.body === undefined ? undefined : isForm ? (opts.body as FormData) : JSON.stringify(opts.body),
     })
     if (!res.ok) {
@@ -87,6 +98,9 @@ export function createApiClient(baseUrl: string) {
 
   const get = <T>(path: string, query?: Query) => request<T>('GET', path, { query })
   const post = <T>(path: string, body?: unknown) => request<T>('POST', path, { body })
+  /** POST with an Idempotency-Key: retrying with the same key never repeats the operation */
+  const postOnce = <T>(path: string, idempotencyKey: string, body?: unknown) =>
+    request<T>('POST', path, { body, headers: { 'Idempotency-Key': idempotencyKey } })
   const patch = <T>(path: string, body?: unknown) => request<T>('PATCH', path, { body })
   const del = <T = void>(path: string) => request<T>('DELETE', path)
   const id = encodeURIComponent
@@ -138,18 +152,26 @@ export function createApiClient(baseUrl: string) {
     },
 
     orders: {
-      place: (input: PlaceOrderInput) => post<OrderDTO>('/orders', input),
+      /** Reuse the same idempotencyKey when retrying the same checkout attempt */
+      place: (input: PlaceOrderInput, idempotencyKey: string) => postOnce<OrderDTO>('/orders', idempotencyKey, input),
       list: (query?: { page?: number; pageSize?: number }) => get<Paginated<OrderDTO>>('/orders', query),
       get: (orderId: string) => get<OrderDTO>(`/orders/${id(orderId)}`),
       cancel: (orderId: string) => post<OrderDTO>(`/orders/${id(orderId)}/cancel`),
     },
 
-    /**
-     * Payments are NOT implemented yet — the API answers 501 with code PAYMENT_NOT_IMPLEMENTED.
-     * TODO(payments): replace `unknown` with the provider session shape once integrated.
-     */
+    /** Razorpay: start → open Checkout in the browser → verify the signed result */
     payments: {
-      start: (orderId: string) => post<unknown>(`/payments/orders/${id(orderId)}`),
+      /** Creates (or reuses) the Razorpay order for one of our orders */
+      start: (orderId: string, idempotencyKey: string) =>
+        postOnce<PaymentSession>(`/payments/orders/${id(orderId)}`, idempotencyKey),
+      /** Sends Razorpay Checkout's signed success payload to be verified; safe to call more than once */
+      verify: (input: VerifyPaymentInput) => post<VerifyPaymentResult>('/payments/verify', input),
+    },
+
+    /** Header bell: notifications the background workers sent about the user's orders */
+    notifications: {
+      list: () => get<NotificationsDTO>('/notifications'),
+      markAllRead: () => post<{ marked: number }>('/notifications/read'),
     },
 
     wishlist: {

@@ -1,11 +1,11 @@
-import { formatDate, formatOrderNumber, ORDER_STATUS, type AddressDTO, type AddressInput } from '@ecom/shared'
+import { awaitingNotification, formatDate, formatOrderNumber, ORDER_STATUS, type AddressDTO, type AddressInput } from '@ecom/shared'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ArrowRight, Heart, MapPin, Package, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { AddressForm } from '../../components/order/AddressForm'
-import { AddressBlock, OrderItems, OrderRow, OrderStatusBadge, OrderTotals, OrderTracker } from '../../components/order/OrderParts'
+import { AddressBlock, OrderItems, OrderNotifications, OrderRow, OrderStatusBadge, OrderTotals, OrderTracker } from '../../components/order/OrderParts'
 import { ProductGrid } from '../../components/product/ProductCard'
 import { Button, ButtonLink } from '../../components/ui/Button'
 import { Field, Input } from '../../components/ui/Form'
@@ -167,7 +167,12 @@ export function OrdersPage() {
 export function OrderDetailPage() {
   const { orderId = '' } = useParams()
   const qc = useQueryClient()
-  const { data: order, isLoading } = useQuery({ queryKey: qk.order(orderId), queryFn: () => api.orders.get(orderId) })
+  const { data: order, isLoading } = useQuery({
+    queryKey: qk.order(orderId),
+    queryFn: () => api.orders.get(orderId),
+    // Emails are sent by a background worker moments after the order changes — poll until they show up
+    refetchInterval: (q) => (q.state.data && awaitingNotification(q.state.data) ? 2000 : false),
+  })
   const cancel = useMutation({
     mutationFn: () => api.orders.cancel(orderId),
     onSuccess: (updated) => {
@@ -199,6 +204,13 @@ export function OrderDetailPage() {
         <OrderTracker order={order} />
         <p className="mt-6 text-center text-sm text-muted">{ORDER_STATUS[order.status].description}</p>
       </Card>
+
+      {(order.notifications.length > 0 || awaitingNotification(order)) && (
+        <Card className="p-6">
+          <h3 className="mb-4 font-sans text-base font-medium tracking-normal">Notifications</h3>
+          <OrderNotifications order={order} />
+        </Card>
+      )}
 
       {order.status === 'PENDING_PAYMENT' && (
         <div className="flex flex-col gap-4 rounded-2xl border border-warning/30 bg-warning-soft px-5 py-4 sm:flex-row sm:items-center sm:justify-between">

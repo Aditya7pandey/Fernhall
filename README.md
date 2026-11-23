@@ -27,7 +27,9 @@ Demo accounts (from the seed):
 | Admin | admin@ecom.dev | admin1234 |
 | Customer | demo@ecom.dev | demo1234 |
 
-Coupons: `WELCOME10` (10% off), `SAVE20` ($20 off ≥ $150), `VIP50` ($50 off ≥ $300).
+Coupons: `WELCOME10` (10% off), `SAVE200` (₹200 off ≥ ₹2,000), `VIP500` (₹500 off ≥ ₹5,000).
+
+Prices are in **INR**, stored in paise in the `*Cents` fields (₹1 = 100) and **GST-inclusive** (18%).
 
 ## Environment
 
@@ -50,7 +52,7 @@ Auth is a JWT in an httpOnly cookie. Guests get a signed-cookie cart that merges
 | Cart | `GET /cart` · `POST /cart/items` · `PATCH/DELETE /cart/items/:productId` · `POST/DELETE /cart/coupon` |
 | Checkout | `GET /checkout/shipping-methods` · `GET /checkout/quote` · `POST /orders` |
 | Account | `GET /orders` · `GET /orders/:id` · `POST /orders/:id/cancel` · `/wishlist` · `/addresses` |
-| Payments | `POST /payments/orders/:id` — **stub, returns 501** (see below) |
+| Payments | `POST /payments/orders/:id` · `POST /payments/verify` · `POST /payments/webhook` (Razorpay, see below) |
 | Admin | `/admin/stats` · `/admin/products` · `/admin/categories` · `/admin/orders` (+ `PATCH :id/status`) · `/admin/customers` · `/admin/coupons` · `/admin/reviews` · `POST /admin/uploads` |
 
 Use the typed client from `@ecom/shared` (`createApiClient`) rather than calling these by hand.
@@ -66,17 +68,50 @@ PENDING_PAYMENT ──(payment)──▶ PAID ──▶ PROCESSING ──▶ SHI
 Placing an order reserves stock and empties the cart. Admins can move orders along the fulfilment
 steps; `PAID` and `REFUNDED` are set only by the payment integration.
 
-## 🚧 Payments — not implemented yet
+## Payments (Razorpay) & idempotency
 
-Everything up to payment is built. An order is created as `PENDING_PAYMENT` / `UNPAID`, and the storefront
-shows a "payment coming soon" step. To finish:
+1. Get **test mode** keys from the Razorpay Dashboard → Account & Settings → API Keys, and put them in
+   `apps/api/.env` (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`). Restart the API.
+2. Place an order on the storefront → **Pay** → Razorpay Checkout opens. Use Razorpay's test card / UPI details.
+3. *(Optional)* Webhooks need a public URL. Run a tunnel (e.g. `cloudflared tunnel --url http://localhost:4000`), then add a
+   webhook in the Dashboard pointing at `<tunnel>/payments/webhook` with the events `payment.captured`, `order.paid`
+   and `payment.failed`, and put its secret in `RAZORPAY_WEBHOOK_SECRET`. Without it, the browser's verify call still marks orders paid.
 
-1. `apps/api/src/routes/payments.ts` — create a payment session with the chosen provider.
-2. Add a webhook route in `apps/api/src/app.ts` **before** `express.json()` (needs the raw body); on success set
-   `status=PAID`, `paymentStatus=PAID`, `paidAt`, `paymentProvider`, `paymentRef`.
-3. Release stock for abandoned or failed payments (`cancelUnpaidOrder` in `apps/api/src/lib/orders.ts`).
-4. Refunds, then allow cancelling paid orders in `ADMIN_TRANSITIONS` (`apps/api/src/lib/orders.ts`).
-5. Wire the storefront's payment step (search for `TODO(payments)`).
+| Endpoint | Idempotency technique |
+| --- | --- |
+| `POST /orders`, `POST /payments/orders/:id` | `Idempotency-Key` header → `middleware/idempotency.ts` (stores and replays responses) |
+| `POST /payments/orders/:id` | One Razorpay order per order (`providerOrderId` is unique; conditional update) |
+| `POST /payments/verify` | Naturally idempotent: signature check + conditional `UPDATE … WHERE paymentStatus IN (UNPAID, FAILED)` |
+| `POST /payments/webhook` | Event de-duplication: `PaymentEvent.eventId` is unique, recorded in the same transaction as the work |
+
+`pnpm --filter @ecom/api test` runs the 11 tests that pin down the middleware's behaviour
+(replay, 409 on concurrent requests, 422 on key reuse, 5xx releases the key, per-user scope, TTL).
+
+Not built yet: refunds (then allow cancelling PAID orders in `ADMIN_TRANSITIONS`) and a real email provider.
+
+## Background jobs (BullMQ + Redis)
+
+Slow or retryable side effects run on queues instead of inside HTTP requests. Redis comes from
+`docker-compose.yml` (host port **6380**; `pnpm db:up` starts it with Postgres).
+
+| Event (published after the DB commit) | Queue | Job | What the worker does |
+| --- | --- | --- | --- |
+| Order placed (`POST /orders`) | `orders` | `order.placed` | "Items reserved" email |
+| | `orders` | `order.expire` (delayed `ORDER_PAYMENT_TIMEOUT_MINUTES`, default 30) | Unpaid? Ask Razorpay if a payment exists → mark paid, else cancel + release stock + email |
+| Payment succeeded (verify or webhook, whichever flipped it to PAID) | `payments` | `payment.succeeded` | Confirmation email, drop the expiry job |
+| — (every 10 min) | `orders` | `orders.sweep` | Safety net: expires stale unpaid orders, sends missing confirmations |
+
+- Workers run inside the API in dev (`RUN_WORKERS_IN_API=true`). In production set it to `false` and run
+  `pnpm --filter @ecom/api worker:start` as its own process.
+- Delivery is at-least-once, so every handler is idempotent: deterministic job ids de-dup publishing,
+  `OrderNotification (orderId, kind)` is unique so an email goes out once, and order state changes are conditional updates.
+- Emails are logged to the console (`lib/mailer.ts`) until a real provider is plugged in.
+- Code: `src/queues/` (queues + publishers) · `src/jobs/` (handlers) · `src/workers/` (BullMQ workers) · `src/worker.ts` (standalone entry).
+
+## API code layout
+
+`routes/*` only wire paths to middleware and controller functions; the request handling lives in
+`controllers/*.controller.ts`; shared domain logic in `lib/`.
 
 ## Changing the schema
 

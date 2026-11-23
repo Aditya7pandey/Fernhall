@@ -4,7 +4,9 @@ import type {
   Category,
   Coupon,
   DiscountType,
+  NotificationKind,
   Order,
+  OrderNotification,
   OrderItem,
   OrderStatus,
   PaymentStatus,
@@ -13,7 +15,7 @@ import type {
   Role,
 } from '@ecom/db/browser'
 
-export type { DiscountType, OrderStatus, PaymentStatus, Role }
+export type { DiscountType, NotificationKind, OrderStatus, PaymentStatus, Role }
 
 /** Shape of a value after it has gone through JSON: Dates become ISO strings. */
 export type Serialized<T> = T extends Date
@@ -156,14 +158,48 @@ export type ShippingAddress = {
 
 export type OrderItemDTO = Serialized<OrderItem>
 
+/** A notification the background workers actually sent for an order (one per kind). */
+export type OrderNotificationDTO = Serialized<Omit<OrderNotification, 'orderId'>>
+
+/** An item in the header bell: a notification plus the order it's about. */
+export type NotificationItemDTO = OrderNotificationDTO & { order: { id: string; number: number } }
+export type NotificationsDTO = { items: NotificationItemDTO[]; unreadCount: number }
+
 export type OrderDTO = Serialized<Omit<Order, 'shippingAddress'>> & {
   shippingAddress: ShippingAddress
   shippingMethod: ShippingMethodId
   items: OrderItemDTO[]
+  notifications: OrderNotificationDTO[]
   user: { id: string; name: string; email: string }
 }
 
 export type PlaceOrderInput = { addressId: string; shippingMethod: ShippingMethodId }
+
+// ─── Payments (Razorpay) ────────────────────────────────────────────────────
+
+/** What the browser needs to open Razorpay Checkout */
+export type PaymentSession = {
+  provider: 'razorpay'
+  /** Public key id (rzp_test_… / rzp_live_…) */
+  keyId: string
+  razorpayOrderId: string
+  /** Paise */
+  amount: number
+  currency: string
+  orderId: string
+  orderNumber: number
+  prefill: { name: string; email: string }
+}
+
+/** Razorpay Checkout's success-handler payload, plus our order id */
+export type VerifyPaymentInput = {
+  orderId: string
+  razorpay_order_id: string
+  razorpay_payment_id: string
+  razorpay_signature: string
+}
+
+export type VerifyPaymentResult = { orderId: string; status: OrderStatus; paymentStatus: PaymentStatus }
 
 // ─── Admin ──────────────────────────────────────────────────────────────────
 
