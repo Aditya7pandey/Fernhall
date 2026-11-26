@@ -7,6 +7,8 @@ function required(name: string): string {
 export const env = {
   port: Number(process.env.PORT ?? 4000),
   isProd: process.env.NODE_ENV === 'production',
+  /** Count SQL per request (terminal line + X-DB-Queries / Server-Timing headers) and flag N+1s. On in dev. */
+  profileQueries: (process.env.PROFILE_QUERIES ?? (process.env.NODE_ENV === 'production' ? 'false' : 'true')) === 'true',
   jwtSecret: required('JWT_SECRET'),
   cookieSecret: required('COOKIE_SECRET'),
   corsOrigins: (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),

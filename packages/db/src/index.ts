@@ -6,7 +6,26 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 function createClient() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is not set");
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+
+  const client = new PrismaClient({
+    adapter: new PrismaPg({connectionString}),
+    log:[
+      {
+        emit:"event",
+        level:"query"
+      }
+    ]
+  })
+
+  if (process.env.NODE_ENV !== "production") {
+    client.$on("query", (event) => {
+      console.log("QUERY:", event.query);
+      console.log("PARAMS:", event.params);
+      console.log("DURATION:", event.duration, "ms");
+    });
+  }
+
+  return client;
 }
 
 // Reuse one client across hot reloads in development

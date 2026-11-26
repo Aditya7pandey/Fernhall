@@ -5,12 +5,14 @@ import helmet from 'helmet'
 import { env } from './env.js'
 import { attachUser } from './middleware/auth.js'
 import { errorHandler, notFoundHandler } from './middleware/error.js'
+import { queryProfiler } from './middleware/query-profiler.js'
 import { addressesRouter, wishlistRouter } from './routes/account.js'
 import { adminRouter } from './routes/admin/index.js'
 import { authRouter } from './routes/auth.js'
 import { cartRouter } from './routes/cart.js'
 import { catalogRouter } from './routes/catalog.js'
 import { notificationsRouter } from './routes/notifications.js'
+import { devRouter } from './routes/dev.js'
 import { checkoutRouter, ordersRouter } from './routes/orders.js'
 import { paymentsRouter, paymentsWebhookRouter } from './routes/payments.js'
 
@@ -19,7 +21,8 @@ export function createApp() {
 
   app.set('trust proxy', 1)
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
-  app.use(cors({ origin: env.corsOrigins, credentials: true }))
+  app.use(cors({ origin: env.corsOrigins, credentials: true, exposedHeaders: ['X-DB-Queries', 'Server-Timing'] }))
+  if (env.profileQueries) app.use(queryProfiler) // dev: SQL count per request, N+1 warnings
   // Razorpay webhook: mounted BEFORE express.json() so it receives the raw body for signature checks
   app.use('/payments/webhook', paymentsWebhookRouter)
   app.use(express.json({ limit: '1mb' }))
@@ -41,6 +44,7 @@ export function createApp() {
   app.use('/wishlist', wishlistRouter)
   app.use('/addresses', addressesRouter)
   app.use('/admin', adminRouter)
+  if (!env.isProd) app.use('/dev', devRouter) // performance lab: N+1 and EXPLAIN experiments
 
   app.use(notFoundHandler)
   app.use(errorHandler)

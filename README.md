@@ -27,7 +27,18 @@ Demo accounts (from the seed):
 | Admin | admin@ecom.dev | admin1234 |
 | Customer | demo@ecom.dev | demo1234 |
 
-Coupons: `WELCOME10` (10% off), `SAVE200` (₹200 off ≥ ₹2,000), `VIP500` (₹500 off ≥ ₹5,000).
+Every seeded customer (e.g. any email on the admin **Customers** page) also logs in with `demo1234`.
+
+**Dataset size.** The seed is deterministic and builds roughly 1,000 customers, ~600 products (37 hand-written
+plus generated colour/material variants), ~6,900 orders spread over a year (growth, weekends, Diwali and other
+sale spikes), ~13k order items, ~2.3k verified-purchase reviews, wishlists, carts and notifications. Takes ~10s.
+Tune it with env vars:
+
+```bash
+SEED_CUSTOMERS=5000 SEED_VARIANTS_PER_PRODUCT=30 pnpm db:seed
+```
+
+Coupons: `WELCOME10` (10% off), `SAVE200` (₹200 off ≥ ₹2,000), `VIP500` (₹500 off ≥ ₹5,000), `FESTIVE15` (15% off, festive sale — already expired, so you can test the expired-coupon path).
 
 Prices are in **INR**, stored in paise in the `*Cents` fields (₹1 = 100) and **GST-inclusive** (18%).
 
